@@ -1,31 +1,53 @@
-const TelegramBot = require('node-telegram-bot-api');
-const express = require('express');
-const bodyParser = require('body-parser');
+import express from "express";
+import fetch from "node-fetch";
 
-const token = process.env.BOT_TOKEN;
-const url = process.env.RAILWAY_URL; // الرابط العام لمشروعك على Railway
-const port = process.env.PORT || 3000;
+const app = express();
+app.use(express.json());
 
-if (!token || !url) {
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const RAILWAY_URL = process.env.RAILWAY_URL;
+const PORT = process.env.PORT || 3000;
+
+if (!BOT_TOKEN || !RAILWAY_URL) {
   console.error("❌ BOT_TOKEN أو RAILWAY_URL غير موجود");
     process.exit(1);
     }
 
-    const bot = new TelegramBot(token);
-    bot.setWebHook(`${url}/bot${token}`);
+    const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+    const WEBHOOK_URL = `${RAILWAY_URL}/webhook`;
 
-    const app = express();
-    app.use(bodyParser.json());
-    app.post(`/bot${token}`, (req, res) => {
-      bot.processUpdate(req.body);
-        res.sendStatus(200);
-        });
+    app.post("/webhook", async (req, res) => {
+      const update = req.body;
 
-        // إضافة مثال لرد تجريبي
-        bot.on('message', (msg) => {
-          bot.sendMessage(msg.chat.id, "✅ البوت يعمل بنجاح!\nهذا رد تجريبي.");
-          });
+        if (update.message) {
+            const chatId = update.message.chat.id;
+                const text = update.message.text || "";
 
-          app.listen(port, () => {
-            console.log(`🤖 البوت يعمل على المنفذ ${port}`);
-            });
+                    await fetch(`${TELEGRAM_API}/sendMessage`, {
+                          method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({
+                                              chat_id: chatId,
+                                                      text: `🤖 البوت يعمل\n📩 رسالتك: ${text}`,
+                                                            }),
+                                                                });
+                                                                  }
+
+                                                                    res.sendStatus(200);
+                                                                    });
+
+                                                                    app.get("/", (req, res) => {
+                                                                      res.send("🤖 Telegram MEV Bot is running");
+                                                                      });
+
+                                                                      app.listen(PORT, async () => {
+                                                                        console.log(`🚀 Server running on port ${PORT}`);
+
+                                                                          await fetch(`${TELEGRAM_API}/setWebhook`, {
+                                                                              method: "POST",
+                                                                                  headers: { "Content-Type": "application/json" },
+                                                                                      body: JSON.stringify({ url: WEBHOOK_URL }),
+                                                                                        });
+
+                                                                                          console.log("✅ Webhook set:", WEBHOOK_URL);
+                                                                                          });
