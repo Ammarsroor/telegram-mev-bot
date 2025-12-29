@@ -1,41 +1,99 @@
 import TelegramBot from "node-telegram-bot-api";
 
-// تأكد أن BOT_TOKEN موجود في متغيرات البيئة في Railway
 const token = process.env.BOT_TOKEN;
 
 if (!token) {
-  console.error("❌ BOT_TOKEN غير موجود في متغيرات البيئة!");
+  console.error("❌ BOT_TOKEN غير موجود");
   process.exit(1);
 }
 
-// تفعيل البوت مع الاستطلاع
 const bot = new TelegramBot(token, { polling: true });
 
-// عند استقبال أي رسالة
+// ====== بيانات وهمية ======
+let balance = 50; // رصيد وهمي
+let openTrades = [];
+
+// ====== أدوات ======
+function randomProfit() {
+  return Math.floor(Math.random() * (100 - 4 + 1)) + 4; // 4% → 100%
+}
+
+// ====== الأوامر ======
 bot.on("message", (msg) => {
   const chatId = msg.chat.id;
-  const text = msg.text?.toLowerCase();
+  const text = msg.text;
 
-  // الأوامر
   if (text === "/start") {
     bot.sendMessage(
       chatId,
-      `🤖 أهلاً بك!\n\n✅ البوت يعمل بنجاح\n📊 لوحة التحكم قيد التجهيز\n⚡ Micro‑Exploits سيتم تفعيلها قريبًا`
+      `🤖 أهلاً بك\n\n💰 رصيد تجريبي: $${balance}\n📊 وضع تجريبي مفعل`
     );
-  } else if (text === "/help") {
+  }
+
+  else if (text === "/help") {
     bot.sendMessage(
       chatId,
-      `🆘 الأوامر المتاحة:\n/start - بدء البوت\n/help - المساعدة\n/status - حالة البوت`
+      `🆘 الأوامر:\n/balance عرض الرصيد\n/buy فتح صفقة\n/sell إغلاق صفقة\n/reset إعادة الرصيد`
     );
-  } else if (text === "/status") {
+  }
+
+  else if (text === "/status") {
     bot.sendMessage(
       chatId,
-      `📡 الحالة:\n🟢 البوت يعمل\n⚙️ Railway متصل\n🔐 التوكن آمن`
+      `📡 الحالة:\n🟢 البوت يعمل\n📈 صفقات مفتوحة: ${openTrades.length}`
     );
-  } else {
-    // أي رسالة أخرى
-    bot.sendMessage(chatId, "⚠️ لم يتم التعرف على هذا الأمر، استخدم /help لعرض الأوامر.");
+  }
+
+  else if (text === "/balance") {
+    bot.sendMessage(chatId, `💰 رصيدك الحالي: $${balance.toFixed(2)}`);
+  }
+
+  else if (text === "/buy") {
+    const tradeAmount = balance * 0.10;
+
+    if (tradeAmount < 1) {
+      bot.sendMessage(chatId, "⚠️ الرصيد غير كافٍ لفتح صفقة");
+      return;
+    }
+
+    balance -= tradeAmount;
+
+    const trade = {
+      amount: tradeAmount,
+      profitPercent: randomProfit()
+    };
+
+    openTrades.push(trade);
+
+    bot.sendMessage(
+      chatId,
+      `🟢 تم فتح صفقة\n💵 المبلغ: $${tradeAmount.toFixed(2)}\n🎯 هدف الربح: ${trade.profitPercent}%`
+    );
+  }
+
+  else if (text === "/sell") {
+    if (openTrades.length === 0) {
+      bot.sendMessage(chatId, "❌ لا توجد صفقات مفتوحة");
+      return;
+    }
+
+    const trade = openTrades.shift();
+    const profit = trade.amount * (trade.profitPercent / 100);
+    const total = trade.amount + profit;
+
+    balance += total;
+
+    bot.sendMessage(
+      chatId,
+      `🔴 تم إغلاق الصفقة\n📈 ربح: $${profit.toFixed(2)} (${trade.profitPercent}%)\n💰 الرصيد الآن: $${balance.toFixed(2)}`
+    );
+  }
+
+  else if (text === "/reset") {
+    balance = 50;
+    openTrades = [];
+    bot.sendMessage(chatId, "♻️ تم إعادة الحساب التجريبي إلى $50");
   }
 });
 
-console.log("🤖 Bot started successfully");
+console.log("🤖 Trading Simulation Bot Started");
