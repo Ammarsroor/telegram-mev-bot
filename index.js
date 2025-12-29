@@ -9,91 +9,109 @@ if (!token) {
 
 const bot = new TelegramBot(token, { polling: true });
 
-// ====== بيانات وهمية ======
-let balance = 50; // رصيد وهمي
-let openTrades = [];
+// تخزين الحسابات الوهمية
+const users = {};
 
-// ====== أدوات ======
+// دالة توليد نسبة ربح عشوائية
 function randomProfit() {
-  return Math.floor(Math.random() * (100 - 4 + 1)) + 4; // 4% → 100%
+  return Math.floor(Math.random() * (100 - 4 + 1)) + 4;
 }
 
-// ====== الأوامر ======
-bot.on("message", (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text;
+// /start
+bot.onText(/\/start/, (msg) => {
+  const id = msg.chat.id;
 
-  if (text === "/start") {
-    bot.sendMessage(
-      chatId,
-      `🤖 أهلاً بك\n\n💰 رصيد تجريبي: $${balance}\n📊 وضع تجريبي مفعل`
-    );
-  }
-
-  else if (text === "/help") {
-    bot.sendMessage(
-      chatId,
-      `🆘 الأوامر:\n/balance عرض الرصيد\n/buy فتح صفقة\n/sell إغلاق صفقة\n/reset إعادة الرصيد`
-    );
-  }
-
-  else if (text === "/status") {
-    bot.sendMessage(
-      chatId,
-      `📡 الحالة:\n🟢 البوت يعمل\n📈 صفقات مفتوحة: ${openTrades.length}`
-    );
-  }
-
-  else if (text === "/balance") {
-    bot.sendMessage(chatId, `💰 رصيدك الحالي: $${balance.toFixed(2)}`);
-  }
-
-  else if (text === "/buy") {
-    const tradeAmount = balance * 0.10;
-
-    if (tradeAmount < 1) {
-      bot.sendMessage(chatId, "⚠️ الرصيد غير كافٍ لفتح صفقة");
-      return;
-    }
-
-    balance -= tradeAmount;
-
-    const trade = {
-      amount: tradeAmount,
-      profitPercent: randomProfit()
+  if (!users[id]) {
+    users[id] = {
+      balance: 50,
+      trades: 0,
+      profit: 0,
     };
-
-    openTrades.push(trade);
-
-    bot.sendMessage(
-      chatId,
-      `🟢 تم فتح صفقة\n💵 المبلغ: $${tradeAmount.toFixed(2)}\n🎯 هدف الربح: ${trade.profitPercent}%`
-    );
   }
 
-  else if (text === "/sell") {
-    if (openTrades.length === 0) {
-      bot.sendMessage(chatId, "❌ لا توجد صفقات مفتوحة");
-      return;
-    }
+  bot.sendMessage(
+    id,
+    `🤖 أهلاً بك!
+✅ الحساب التجريبي جاهز
+💰 الرصيد: ${users[id].balance}$
 
-    const trade = openTrades.shift();
-    const profit = trade.amount * (trade.profitPercent / 100);
-    const total = trade.amount + profit;
-
-    balance += total;
-
-    bot.sendMessage(
-      chatId,
-      `🔴 تم إغلاق الصفقة\n📈 ربح: $${profit.toFixed(2)} (${trade.profitPercent}%)\n💰 الرصيد الآن: $${balance.toFixed(2)}`
-    );
-  }
-
-  else if (text === "/reset") {
-    balance = 50;
-    openTrades = [];
-    bot.sendMessage(chatId, "♻️ تم إعادة الحساب التجريبي إلى $50");
-  }
+الأوامر:
+/buy - تنفيذ صفقة وهمية
+/sell - إغلاق صفقة
+/balance - عرض الرصيد
+/status - حالة البوت
+/help - المساعدة`
+  );
 });
 
-console.log("🤖 Trading Simulation Bot Started");
+// /help
+bot.onText(/\/help/, (msg) => {
+  bot.sendMessage(
+    msg.chat.id,
+    `🆘 الأوامر المتاحة:
+/start - بدء البوت
+/buy - شراء وهمي
+/sell - بيع وهمي
+/balance - الرصيد
+/status - الحالة`
+  );
+});
+
+// /status
+bot.onText(/\/status/, (msg) => {
+  bot.sendMessage(
+    msg.chat.id,
+    `📡 الحالة:
+🟢 البوت يعمل
+⚙️ التداول: تجريبي
+💰 رأس المال: وهمي`
+  );
+});
+
+// /balance
+bot.onText(/\/balance/, (msg) => {
+  const id = msg.chat.id;
+  if (!users[id]) return;
+
+  bot.sendMessage(
+    id,
+    `💰 الرصيد الحالي: ${users[id].balance.toFixed(2)}$
+📊 عدد الصفقات: ${users[id].trades}`
+  );
+});
+
+// /buy
+bot.onText(/\/buy/, (msg) => {
+  const id = msg.chat.id;
+  if (!users[id]) return;
+
+  const tradeAmount = users[id].balance * 0.10; // 10%
+  const profitPercent = randomProfit();
+  const profit = (tradeAmount * profitPercent) / 100;
+
+  users[id].balance += profit;
+  users[id].profit += profit;
+  users[id].trades++;
+
+  bot.sendMessage(
+    id,
+    `🟢 صفقة شراء وهمية
+💵 المبلغ: ${tradeAmount.toFixed(2)}$
+📈 الربح: ${profitPercent}%
+✅ الربح: ${profit.toFixed(2)}$`
+  );
+});
+
+// /sell
+bot.onText(/\/sell/, (msg) => {
+  const id = msg.chat.id;
+  if (!users[id]) return;
+
+  bot.sendMessage(
+    id,
+    `🔴 تم إغلاق الصفقة
+💰 الرصيد الجديد: ${users[id].balance.toFixed(2)}$`
+  );
+});
+
+console.log("🤖 Trading Simulation Bot Started Successfully");
