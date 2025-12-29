@@ -1,117 +1,96 @@
 import TelegramBot from "node-telegram-bot-api";
 
-const token = process.env.BOT_TOKEN;
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-if (!token) {
-  console.error("❌ BOT_TOKEN غير موجود");
-  process.exit(1);
-}
+/* ====== إعدادات المحاكاة ====== */
+const START_BALANCE = 50;
+const TRADE_PERCENT = 0.10; // 10% من الرصيد
+const FEE_PERCENT = 0.003; // 0.3% رسوم
+const GAS_FEE = 0.002; // غاز وهمي
+const TRADE_INTERVAL = 15000; // كل 15 ثانية
 
-const bot = new TelegramBot(token, { polling: true });
-
-// تخزين الحسابات الوهمية
+/* ====== التخزين ====== */
 const users = {};
 
-// دالة توليد نسبة ربح عشوائية
-function randomProfit() {
-  return Math.floor(Math.random() * (100 - 4 + 1)) + 4;
+/* ====== أدوات ====== */
+function randomBetween(min, max) {
+  return Math.random() * (max - min) + min;
 }
 
-// /start
+function fakeDexPrice() {
+  return randomBetween(0.8, 1.2); // محاكاة تغير السعر
+}
+
+/* ====== بدء البوت ====== */
 bot.onText(/\/start/, (msg) => {
   const id = msg.chat.id;
 
   if (!users[id]) {
     users[id] = {
-      balance: 50,
+      balance: START_BALANCE,
       trades: 0,
-      profit: 0,
+      running: true,
     };
+
+    startAutoTrading(id);
   }
 
   bot.sendMessage(
     id,
-    `🤖 أهلاً بك!
-✅ الحساب التجريبي جاهز
-💰 الرصيد: ${users[id].balance}$
+    `🤖 تم تشغيل التداول الوهمي تلقائيًا
 
-الأوامر:
-/buy - تنفيذ صفقة وهمية
-/sell - إغلاق صفقة
-/balance - عرض الرصيد
-/status - حالة البوت
-/help - المساعدة`
+💰 الرصيد: ${users[id].balance.toFixed(2)}$
+📈 الصفقات: تلقائية
+⛽ الغاز: محاكاة
+🧠 الأسعار: محاكاة DexScreener`
   );
 });
 
-// /help
-bot.onText(/\/help/, (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
-    `🆘 الأوامر المتاحة:
-/start - بدء البوت
-/buy - شراء وهمي
-/sell - بيع وهمي
-/balance - الرصيد
-/status - الحالة`
-  );
-});
-
-// /status
+/* ====== حالة ====== */
 bot.onText(/\/status/, (msg) => {
+  const u = users[msg.chat.id];
+  if (!u) return;
+
   bot.sendMessage(
     msg.chat.id,
-    `📡 الحالة:
-🟢 البوت يعمل
-⚙️ التداول: تجريبي
-💰 رأس المال: وهمي`
+    `📊 الحالة:
+💰 الرصيد: ${u.balance.toFixed(2)}$
+📈 عدد الصفقات: ${u.trades}
+🤖 التداول: تلقائي`
   );
 });
 
-// /balance
-bot.onText(/\/balance/, (msg) => {
-  const id = msg.chat.id;
-  if (!users[id]) return;
+/* ====== التداول التلقائي ====== */
+function startAutoTrading(chatId) {
+  setInterval(() => {
+    const user = users[chatId];
+    if (!user || !user.running) return;
+    if (user.balance <= 1) return;
 
-  bot.sendMessage(
-    id,
-    `💰 الرصيد الحالي: ${users[id].balance.toFixed(2)}$
-📊 عدد الصفقات: ${users[id].trades}`
-  );
-});
+    const tradeAmount = user.balance * TRADE_PERCENT;
+    const entryPrice = fakeDexPrice();
+    const exitPrice = fakeDexPrice();
 
-// /buy
-bot.onText(/\/buy/, (msg) => {
-  const id = msg.chat.id;
-  if (!users[id]) return;
+    const priceChange = (exitPrice - entryPrice) / entryPrice;
+    const profit = tradeAmount * priceChange;
 
-  const tradeAmount = users[id].balance * 0.10; // 10%
-  const profitPercent = randomProfit();
-  const profit = (tradeAmount * profitPercent) / 100;
+    const fee = tradeAmount * FEE_PERCENT;
+    const net = profit - fee - GAS_FEE;
 
-  users[id].balance += profit;
-  users[id].profit += profit;
-  users[id].trades++;
+    user.balance += net;
+    user.trades++;
 
-  bot.sendMessage(
-    id,
-    `🟢 صفقة شراء وهمية
+    bot.sendMessage(
+      chatId,
+      `🔄 صفقة وهمية تلقائية
 💵 المبلغ: ${tradeAmount.toFixed(2)}$
-📈 الربح: ${profitPercent}%
-✅ الربح: ${profit.toFixed(2)}$`
-  );
-});
+📊 فرق السعر: ${(priceChange * 100).toFixed(2)}%
+⛽ غاز: ${GAS_FEE}$
+💸 رسوم: ${fee.toFixed(3)}$
+✅ الصافي: ${net.toFixed(2)}$
+💰 الرصيد: ${user.balance.toFixed(2)}$`
+    );
+  }, TRADE_INTERVAL);
+}
 
-// /sell
-bot.onText(/\/sell/, (msg) => {
-  const id = msg.chat.id;
-  if (!users[id]) return;
-
-  bot.sendMessage(
-    id,
-    `🔴 تم إغلاق الصفقة
-💰 الرصيد الجديد: ${users[id].balance.toFixed(2)}$`
-  );
-});
-
-console.log("🤖 Trading Simulation Bot Started Successfully");
+console.log("🤖 Auto Trading Simulation Bot Running");
