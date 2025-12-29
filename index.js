@@ -1,151 +1,164 @@
 import TelegramBot from "node-telegram-bot-api";
+import axios from "axios";
+import dotenv from "dotenv";
+dotenv.config();
 
 /* ================== CONFIG ================== */
-const BOT_TOKEN = process.env.BOT_TOKEN || "PUT_YOUR_BOT_TOKEN_HERE";
+const BOT_TOKEN = process.env.BOT_TOKEN;
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
-/* ============== PAPER ACCOUNT =============== */
-let account = {
-  balance: 50,
-  startBalance: 50,
-  wins: 0,
-  losses: 0,
-  trades: 0,
-  maxDrawdown: 0,
-  openTrades: [],
-  cooldown: false,
+let MODE = "PAPER";
+let balance = 50.0;
+let startBalance = 50.0;
+let tradeSizePercent = 0.10;
+let maxLossPercent = 0.20;
+
+let stats = {
+  total: 0,
+  win: 0,
+  loss: 0,
 };
 
-/* ============== STRATEGY CONFIG ============== */
-const CONFIG = {
-  tradePercent: 0.1,
-  minTrade: 3,
-  maxTrade: 6,
-  tp: [0.04, 0.08, 0.15],
-  sl: -0.05,
-  hardSl: -0.07,
-  maxTradesPerHour: 3,
-  maxOpenTrades: 2,
-};
+let running = true;
 
-/* ============== UTILS ================== */
-function random(min, max) {
-  return Math.random() * (max - min) + min;
+/* ================== UTILS ================== */
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+const gasFee = 0.002;
+const tradeFee = 0.015;
+const openFee = 0.20;
+
+/* ================== DATA SOURCES ================== */
+async function fetchDexPairs() {
+  try {
+    const res = await axios.get(
+      "https://api.dexscreener.com/latest/dex/search?q=SOL"
+    );
+    return res.data.pairs || [];
+  } catch {
+    return [];
+  }
 }
 
-/* ============== FAKE MARKET DATA ================== */
-function getFakeMarket() {
-  return {
-    priceChange5m: random(-30, 40),
-    liquidity: random(10000, 80000),
-    volume5m: random(5000, 50000),
-  };
+/* ================== SCAM FILTER ================== */
+function isSafeToken(pair) {
+  if (!pair.liquidity || pair.liquidity.usd < 5000) return false;
+  if (pair.fdv && pair.fdv < 50000) return false;
+  if (!pair.baseToken || !pair.quoteToken) return false;
+  return true;
 }
 
-/* ============== ENTRY CHECK ================== */
-function canEnter(m) {
+/* ================== INDICATORS ================== */
+function indicators(pair) {
   let score = 0;
-  if (m.priceChange5m >= 2) score++;
-  if (m.liquidity >= 30000) score++;
-  if (m.volume5m >= 10000) score++;
-  return score >= 2;
+
+  // 1 Volume Spike
+  if (pair.volume.h24 > 50000) score++;
+
+  // 2 Price Change
+  if (pair.priceChange.h1 > 5) score++;
+
+  // 3 Momentum
+  if (pair.priceChange.m5 > pair.priceChange.h1 * 0.2) score++;
+
+  // 4 Liquidity Ratio
+  if (pair.liquidity.usd / pair.fdv > 0.05) score++;
+
+  // 5 RSI proxy
+  if (pair.priceChange.m5 > 0 && pair.priceChange.h1 > 0) score++;
+
+  // 6 Buy pressure
+  if (pair.txns.h1.buys > pair.txns.h1.sells) score++;
+
+  // 7 MarketCap velocity
+  if (pair.priceChange.h24 > 10) score++;
+
+  return score;
 }
 
-/* ============== EXECUTE PAPER TRADE ================== */
-function executeTrade(chatId) {
-  if (account.cooldown) return;
-
-  if (account.openTrades.length >= CONFIG.maxOpenTrades) return;
-
-  const market = getFakeMarket();
-  if (!canEnter(market)) return;
-
-  let size = Math.min(
-    Math.max(account.balance * CONFIG.tradePercent, CONFIG.minTrade),
-    CONFIG.maxTrade
-  );
-
-  const priceMove = random(-0.35, 0.35); // -35% to +35%
-  const gas = random(0.002, 0.005);
-  const fee = size * 0.003;
-
-  let profit = size * priceMove - gas - fee;
-  account.balance += profit;
-  account.trades++;
-
-  if (profit > 0) account.wins++;
-  else account.losses++;
-
-  const drawdown = account.startBalance - account.balance;
-  if (drawdown > account.maxDrawdown) account.maxDrawdown = drawdown;
-
-  if (account.losses >= 2 && profit < 0) {
-    account.cooldown = true;
-    setTimeout(() => (account.cooldown = false), 15 * 60 * 1000);
+/* ================== TRADE ENGINE ================== */
+async function simulateTrade(pair) {
+  if (!running) return;
+  if (balance <= startBalance * (1 - maxLossPercent)) {
+    running = false;
+    bot.sendMessage(
+      ADMIN_CHAT,
+      "⛔ تم إيقاف البوت: خسارة 20% من رأس المال"
+    );
+    return;
   }
 
+  const tradeAmount = balance * tradeSizePercent;
+  const change = pair.priceChange.h1 / 100;
+  const pnl = tradeAmount * change - gasFee - tradeFee - openFee;
+
+  balance += pnl;
+  stats.total++;
+
+  if (pnl > 0) stats.win++;
+  else stats.loss++;
+
   bot.sendMessage(
-    chatId,
-    `🔄 صفقة وهمية تلقائية\n\n` +
-      `💵 المبلغ: ${size.toFixed(2)}$\n` +
-      `📊 فرق السعر: ${(priceMove * 100).toFixed(2)}%\n` +
-      `⛽ غاز: ${gas.toFixed(3)}$\n` +
-      `💸 رسوم: ${fee.toFixed(3)}$\n` +
-      `✅ الصافي: ${profit.toFixed(2)}$\n` +
-      `💰 الرصيد: ${account.balance.toFixed(2)}$`
+    ADMIN_CHAT,
+`🔄 صفقة وهمية تلقائية
+💵 المبلغ: ${tradeAmount.toFixed(2)}$
+📊 فرق السعر: ${(change * 100).toFixed(2)}%
+⛽ غاز: ${gasFee}$
+💸 رسوم: ${tradeFee + openFee}$
+✅ الصافي: ${pnl.toFixed(2)}$
+💰 الرصيد: ${balance.toFixed(2)}$`
   );
 }
 
-/* ============== TELEGRAM COMMANDS ================== */
+/* ================== MARKET SCANNER ================== */
+async function scanMarket() {
+  const pairs = await fetchDexPairs();
+
+  for (const pair of pairs) {
+    if (!isSafeToken(pair)) continue;
+
+    const score = indicators(pair);
+    if (score >= 5) {
+      await simulateTrade(pair);
+      await sleep(2000);
+    }
+  }
+}
+
+/* ================== TELEGRAM COMMANDS ================== */
+let ADMIN_CHAT = null;
 
 bot.onText(/\/start/, (msg) => {
+  ADMIN_CHAT = msg.chat.id;
   bot.sendMessage(
-    msg.chat.id,
-    `🤖 Ammar MEV Bot (Paper Trading)\n\n` +
-      `الأوامر:\n` +
-      `/status – حالة الحساب\n` +
-      `/run – تشغيل البوت\n` +
-      `/stop – إيقاف البوت`,
-    {
-      reply_markup: {
-        keyboard: [
-          [{ text: "▶ تشغيل" }, { text: "⏹ إيقاف" }],
-          [{ text: "📊 الحالة" }],
-        ],
-        resize_keyboard: true,
-      },
-    }
+    ADMIN_CHAT,
+    "🤖 Ammar MEV Bot يعمل\n📊 الوضع: Paper Trading\n⏱ فحص السوق كل 60 ثانية"
   );
 });
 
-let interval = null;
-
-bot.onText(/\/run|▶ تشغيل/, (msg) => {
-  if (interval) return;
-  interval = setInterval(() => executeTrade(msg.chat.id), 20000);
-  bot.sendMessage(msg.chat.id, "✅ تم تشغيل البوت (Paper Trading)");
-});
-
-bot.onText(/\/stop|⏹ إيقاف/, (msg) => {
-  clearInterval(interval);
-  interval = null;
-  bot.sendMessage(msg.chat.id, "⛔ تم إيقاف البوت");
-});
-
-bot.onText(/\/status|📊 الحالة/, (msg) => {
-  const winRate =
-    account.trades > 0
-      ? ((account.wins / account.trades) * 100).toFixed(2)
-      : 0;
-
+bot.onText(/\/status/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    `📊 حالة الحساب\n\n` +
-      `💰 الرصيد: ${account.balance.toFixed(2)}$\n` +
-      `📈 الصفقات: ${account.trades}\n` +
-      `✅ أرباح: ${account.wins}\n` +
-      `❌ خسائر: ${account.losses}\n` +
-      `🎯 Win Rate: ${winRate}%\n` +
-      `📉 Max Drawdown: ${account.maxDrawdown.toFixed(2)}$`
+`📡 الحالة:
+🟢 يعمل
+💰 الرصيد: ${balance.toFixed(2)}$
+📊 الصفقات: ${stats.total}`
   );
 });
+
+bot.onText(/\/stats/, (msg) => {
+  bot.sendMessage(
+    msg.chat.id,
+`📊 الإحصائيات:
+✔ رابحة: ${stats.win}
+❌ خاسرة: ${stats.loss}
+📈 Win Rate: ${
+      stats.total ? ((stats.win / stats.total) * 100).toFixed(2) : 0
+    }%`
+  );
+});
+
+/* ================== LOOP ================== */
+setInterval(scanMarket, 60000);
+
+console.log("🤖 Bot started successfully");
