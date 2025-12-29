@@ -1,35 +1,40 @@
 import TelegramBot from "node-telegram-bot-api";
 
-// ضع التوكن في Railway Variables → BOT_TOKEN
+// تأكد أن BOT_TOKEN موجود في متغيرات البيئة في Railway
 const token = process.env.BOT_TOKEN;
 
 if (!token) {
-  console.error("❌ BOT_TOKEN not found");
+  console.error("❌ BOT_TOKEN غير موجود في متغيرات البيئة!");
   process.exit(1);
 }
 
+// تفعيل البوت مع الاستطلاع
 const bot = new TelegramBot(token, { polling: true });
 
-// مثال أوامر تجريبية للبوت
+// عند استقبال أي رسالة
 bot.on("message", (msg) => {
-  const text = msg.text || "";
+  const chatId = msg.chat.id;
+  const text = msg.text?.toLowerCase();
+
+  // الأوامر
   if (text === "/start") {
     bot.sendMessage(
-      msg.chat.id,
-      "🤖 أهلاً بك!\n\n✅ البوت يعمل بنجاح\n📊 لوحة التحكم قيد التجهيز\n⚡ Micro‑Exploits سيتم تفعيلها قريبًا"
+      chatId,
+      `🤖 أهلاً بك!\n\n✅ البوت يعمل بنجاح\n📊 لوحة التحكم قيد التجهيز\n⚡ Micro‑Exploits سيتم تفعيلها قريبًا`
     );
   } else if (text === "/help") {
     bot.sendMessage(
-      msg.chat.id,
-      "🆘 الأوامر المتاحة:\n/start - بدء البوت\n/help - المساعدة\n/status - حالة البوت"
+      chatId,
+      `🆘 الأوامر المتاحة:\n/start - بدء البوت\n/help - المساعدة\n/status - حالة البوت`
     );
   } else if (text === "/status") {
     bot.sendMessage(
-      msg.chat.id,
-      "📡 الحالة:\n🟢 البوت يعمل\n⚙️ Railway متصل\n🔐 التوكن آمن"
+      chatId,
+      `📡 الحالة:\n🟢 البوت يعمل\n⚙️ Railway متصل\n🔐 التوكن آمن`
     );
   } else {
-    bot.sendMessage(msg.chat.id, "✅ البوت يعمل بنجاح!\nهذا رد تجريبي.");
+    // أي رسالة أخرى
+    bot.sendMessage(chatId, "⚠️ لم يتم التعرف على هذا الأمر، استخدم /help لعرض الأوامر.");
   }
 });
 
